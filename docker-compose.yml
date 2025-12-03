@@ -3,12 +3,14 @@ version: "3.8"
 services:
 
   frontend_app: 
-    hostname: frontend_app
     container_name: frontend_app
-    restart: always
     build: 
       context: frontend/
-    image: frontend_app
+      args:
+        - REACT_APP_API_BASE_URL=http://localhost:3500
+        - REACT_APP_ENV=production
+
+    image: somya8890/frontend_app:latest   # your dockerhub image
     ports: 
       - "3000:80"
     depends_on:
@@ -17,43 +19,16 @@ services:
       - three-tier-net 
 
   backend_app:
-    hostname: backend_app
     container_name: backend_app
-    restart: always
     build: 
       context: backend/
-    image: backend_app
+    image: somya8890/backend_app:latest   # your dockerhub image
     ports: 
       - "3500:3500"
-    environment:
-      - MYSQL_HOST=db
-      - MYSQL_USER=root
-      - MYSQL_PASSWORD=mysql123
-      - MYSQL_DATABASE=school
-    depends_on:
-      - db
+    env_file: ./backend/.env 
     networks:
       - three-tier-net
-
-  db:
-    hostname: mysql
-    container_name: mysql
-    image: mysql
-    restart: always
-    environment:
-      - MYSQL_ROOT_PASSWORD=mysql123
-      - MYSQL_DATABASE=school
-    volumes:
-      - mysql-data:/var/lib/mysql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    networks:
-      - three-tier-net
- 
-volumes:
-  mysql-data:
-    name: mysql-data
 
 networks:
   three-tier-net:
-    name: three-tier-net
     driver: bridge

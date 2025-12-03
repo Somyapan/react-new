@@ -1,6 +1,10 @@
 # Stage 1: Build the application using Node.js
 FROM node:21-alpine3.17 as build
 WORKDIR /app
+ARG REACT_APP_API_BASE_URL
+ENV REACT_APP_API_BASE_URL=${REACT_APP_API_BASE_URL}
+ARG REACT_APP_ENV
+ENV REACT_APP_ENV=${REACT_APP_ENV}
 COPY . .
 RUN npm install
 RUN npm run build

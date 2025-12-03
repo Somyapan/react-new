@@ -24,3 +24,4 @@ EXPOSE 3500
 
 # Run wait-for-mysql.sh
 CMD ["./wait-for-mysql.sh"]
+#CMD ["node", "server.js"]
