@@ -124,6 +124,15 @@ jobs:
 
             docker compose up -d
 
+            echo "Waiting for containers to start..."
+            sleep 10
+            
+            echo "Checking container status..."
+            docker ps -a
+            
+            echo "Backend logs (last 20 lines):"
+            docker logs backend_app --tail 20 || true
+            
             docker image prune -af --filter "until=24h"
 
   # ==================== HEALTH CHECK ====================
@@ -133,17 +142,87 @@ jobs:
     
     steps:
       - name: Wait for App Startup
-        run: sleep 20
+        run: sleep 30
+
+      - name: Verify Containers on EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "=== Docker Containers Status ==="
+            docker ps -a
+            
+            echo -e "\n=== Backend Container Logs ==="
+            docker logs backend_app --tail 50 || echo "Backend container not found"
+            
+            echo -e "\n=== Frontend Container Logs ==="
+            docker logs frontend_app --tail 30 || echo "Frontend container not found"
+            
+            echo -e "\n=== Docker Compose Services ==="
+            cd /home/${{ secrets.EC2_USERNAME }}/3-tier-app
+            docker compose ps
+
+      - name: Check Port Accessibility
+        run: |
+          echo "Testing if port 3500 is accessible..."
+          nc -zv ${{ secrets.EC2_HOST }} 3500 -w 5 || echo "⚠️ Port 3500 is not accessible"
+          
+          echo "Testing if port 80 is accessible..."
+          nc -zv ${{ secrets.EC2_HOST }} 80 -w 5 || echo "⚠️ Port 80 is not accessible"
+
+      - name: Check Backend Health
+        id: backend_health
+        continue-on-error: true
+        run: |
+          echo "Checking backend at http://${{ secrets.EC2_HOST }}:3500/health"
+          for i in {1..10}; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 http://${{ secrets.EC2_HOST }}:3500/health 2>/dev/null || echo "000")
+            echo "Attempt $i: HTTP Status $CODE"
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Backend is healthy!"
+              echo "status=success" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "❌ Backend health check failed after 10 attempts"
+          echo ""
+          echo "⚠️  TROUBLESHOOTING STEPS:"
+          echo "1. Check EC2 Security Group - Port 3500 must be open"
+          echo "   AWS Console → EC2 → Security Groups → Inbound Rules"
+          echo ""
+          echo "2. Check RDS Security Group - Must allow EC2 connection"
+          echo "   AWS Console → RDS → Security Groups → Port 3306"
+          echo ""
+          echo "3. SSH into EC2 and check containers:"
+          echo "   ssh ubuntu@${{ secrets.EC2_HOST }}"
+          echo "   docker ps -a"
+          echo "   docker logs backend_app"
+          echo ""
+          echo "4. Test backend locally on EC2:"
+          echo "   curl http://localhost:3500/health"
+          echo ""
+          echo "status=failed" >> $GITHUB_OUTPUT
 
       - name: Check Frontend
+        id: frontend_health
+        continue-on-error: true
         run: |
-          CODE=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }})
-          [ "$CODE" -eq 200 ] || (echo "Frontend failed: $CODE" && exit 1)
-
-      - name: Check Backend
-        run: |
-          CODE=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:3500/health)
-          [ "$CODE" -eq 200 ] || (echo "Backend failed: $CODE" && exit 1)
+          echo "Checking frontend at http://${{ secrets.EC2_HOST }}"
+          for i in {1..5}; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://${{ secrets.EC2_HOST }} || echo "000")
+            echo "Attempt $i: HTTP Status $CODE"
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Frontend is healthy!"
+              echo "status=success" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "⚠️ Frontend health check failed"
+          echo "status=failed" >> $GITHUB_OUTPUT
 
   # ==================== NOTIFY ====================
   notify:
@@ -154,8 +233,36 @@ jobs:
     steps:
       - name: Deployment Result
         run: |
-          if [ "${{ needs.health-check.result }}" = "success" ]; then
-            echo "🚀 Deployment Successful with RDS!"
+          echo "=========================================="
+          echo "   DEPLOYMENT SUMMARY"
+          echo "=========================================="
+          echo ""
+          echo "Deploy Status: ${{ needs.deploy-to-ec2.result }}"
+          echo "Health Check Status: ${{ needs.health-check.result }}"
+          echo ""
+          
+          if [ "${{ needs.deploy-to-ec2.result }}" = "success" ]; then
+            echo "✅ Deployment completed"
+            echo ""
+            echo "🔗 Access your application:"
+            echo "   Frontend: http://${{ secrets.EC2_HOST }}"
+            echo "   Backend: http://${{ secrets.EC2_HOST }}:3500/health"
+            echo ""
+            
+            if [ "${{ needs.health-check.result }}" != "success" ]; then
+              echo "⚠️  Health checks did not pass"
+              echo ""
+              echo "📋 Next steps:"
+              echo "1. Check if containers are running on EC2"
+              echo "2. Verify EC2 Security Group allows ports 80 and 3500"
+              echo "3. Verify RDS Security Group allows EC2 connection"
+              echo "4. Review container logs above"
+            else
+              echo "🎉 All health checks passed!"
+            fi
           else
-            echo "❌ Deployment Failed!"
+            echo "❌ Deployment failed"
+            echo "Check the logs above for details"
           fi
+          echo ""
+          echo "=========================================="

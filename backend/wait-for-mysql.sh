@@ -28,13 +28,10 @@
 
 #!/bin/sh
 
-echo "Waiting for MySQL at $MYSQL_HOST:3306"
+echo "Checking RDS connection..."
+echo "MySQL Host: $MYSQL_HOST"
+echo "MySQL Database: $MYSQL_DATABASE"
 
-# Loop until MySQL is reachable
-while ! nc -z "$MYSQL_HOST" 3306; do
-  echo "MySQL not reachable..."
-  sleep 3
-done
-
-echo "MySQL is reachable. Starting server..."
+# For RDS, just start the server - it will retry connections internally
+echo "Starting Node.js server..."
 node server.js
