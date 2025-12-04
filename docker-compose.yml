@@ -1,33 +1,38 @@
 version: "3.8"
 
 services:
+  backend_app:
+    container_name: backend_app
+    build: 
+      context: backend/
+    image: somya8890/3-tier-backend:latest
+    ports: 
+      - "3500:3500"
+    environment:
+      MYSQL_HOST: ${MYSQL_HOST}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    networks:
+      - three-tier-net
+    restart: unless-stopped
 
   frontend_app: 
     container_name: frontend_app
     build: 
       context: frontend/
       args:
-        - REACT_APP_API_BASE_URL=http://localhost:3500
+        - REACT_APP_API_BASE_URL=http://3.110.157.201:3500
         - REACT_APP_ENV=production
-
-    image: somya8890/frontend_app:latest   # your dockerhub image
+    image: somya8890/3-tier-frontend:latest
     ports: 
       - "3000:80"
+      - "80:80"
     depends_on:
       - backend_app
     networks:
-      - three-tier-net 
-
-  backend_app:
-    container_name: backend_app
-    build: 
-      context: backend/
-    image: somya8890/backend_app:latest   # your dockerhub image
-    ports: 
-      - "3500:3500"
-    env_file: ./backend/.env 
-    networks:
       - three-tier-net
+    restart: unless-stopped
 
 networks:
   three-tier-net:
